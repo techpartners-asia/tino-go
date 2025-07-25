@@ -106,6 +106,27 @@ func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
 }
 
 func (t *tino) CheckTokenExpire() error {
+	if t.client == nil {
+		client := resty.New()
+		defer client.Close()
+		res, err := client.R().
+			SetBody(AuthRequest{
+				Username: t.username,
+				Password: t.password,
+			}).
+			SetResult(&AuthResponse{}). // or SetResult(LoginResponse{}).
+			SetError(&AuthResponse{}).  // or SetError(LoginError{}).
+			Post(t.authUrl + "/merchant/login")
+		if err != nil {
+			return err
+		}
+		if res.IsError() {
+			return errors.New(res.Error().(string))
+		}
+		response := res.Result().(*AuthResponse)
+		t.client = &response.Data
+		return nil
+	}
 	if !t.client.Token.ExpiresAt.Before(time.Now()) {
 		client := resty.New()
 		defer client.Close()
