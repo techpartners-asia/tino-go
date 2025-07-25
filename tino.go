@@ -8,6 +8,7 @@ import (
 )
 
 type tino struct {
+	authUrl  string
 	baserUrl string
 	username string
 	password string
@@ -21,8 +22,9 @@ type Tino interface {
 	CheckTokenExpire() error
 }
 
-func New(baseURL string, username string, password string) Tino {
+func New(authUrl string, baseURL string, username string, password string) Tino {
 	return &tino{
+		authUrl:  authUrl,
 		baserUrl: baseURL,
 		username: username,
 		password: password,
@@ -114,7 +116,7 @@ func (t *tino) CheckTokenExpire() error {
 			}).
 			SetResult(&AuthResponse{}). // or SetResult(LoginResponse{}).
 			SetError(&AuthResponse{}).  // or SetError(LoginError{}).
-			Post(t.baserUrl + "/merchant/login")
+			Post(t.authUrl + "/merchant/login")
 		if err != nil {
 			return err
 		}
