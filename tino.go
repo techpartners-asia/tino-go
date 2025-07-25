@@ -40,7 +40,7 @@ func (t *tino) CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error) 
 	defer client.Close()
 	var response *InvoiceResponse
 	res, err := client.R().
-		SetAuthToken(t.client.Token.Token).
+		SetAuthToken(t.client.Token).
 		SetBody(invoice).              // default request content type is JSON
 		SetResult(&InvoiceResponse{}). // or SetResult(LoginResponse{}).
 		SetError(&InvoiceResponse{}).  // or SetError(LoginError{}).
@@ -64,7 +64,7 @@ func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
 	defer client.Close()
 	var response *InvoiceResponse
 	res, err := client.R().
-		SetAuthToken(t.client.Token.Token).
+		SetAuthToken(t.client.Token).
 		SetQueryParam("reason", "canceled").
 		SetResult(&InvoiceResponse{}). // or SetResult(LoginResponse{}).
 		SetError(&InvoiceResponse{}).  // or SetError(LoginError{}).
@@ -91,7 +91,7 @@ func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
 	defer client.Close()
 	var response *InvoiceCheckResponse
 	res, err := client.R().
-		SetAuthToken(t.client.Token.Token).
+		SetAuthToken(t.client.Token).
 		SetResult(&InvoiceCheckResponse{}). // or SetResult(LoginResponse{}).
 		SetError(&InvoiceCheckResponse{}).  // or SetError(LoginError{}).
 		Get(t.baserUrl + "/merchant/invoice/" + invoiceId)
@@ -127,7 +127,7 @@ func (t *tino) CheckTokenExpire() error {
 		t.client = &response.Data
 		return nil
 	}
-	if !t.client.Token.ExpiresAt.Before(time.Now()) {
+	if !t.client.ExpiresAt.Before(time.Now()) {
 		client := resty.New()
 		defer client.Close()
 		res, err := client.R().

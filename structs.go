@@ -19,8 +19,11 @@ type (
 		Data AuthData `json:"data"`
 	}
 	AuthData struct {
-		User  AuthUserData  `json:"user"`
-		Token AuthTokenData `json:"token"`
+		User            AuthUserData `json:"user"`
+		Token           string       `json:"token"`
+		RefreshToken    string       `json:"refresh_token"`
+		RefreshExpireAt time.Time    `json:"refresh_expires_at"`
+		ExpiresAt       time.Time    `json:"expires_at"`
 	}
 	AuthUserData struct {
 		ID        string    `json:"id"`
@@ -28,12 +31,6 @@ type (
 		Profile   string    `json:"profile"`
 		Status    string    `json:"status"`
 		CreatedAt time.Time `json:"created_at"`
-	}
-	AuthTokenData struct {
-		Token           string    `json:"token"`
-		RefreshToken    string    `json:"refresh_token"`
-		RefreshExpireAt time.Time `json:"refresh_expires_at"`
-		ExpiresAt       time.Time `json:"expires_at"`
 	}
 )
 
