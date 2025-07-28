@@ -38,21 +38,19 @@ func (t *tino) CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error) 
 	}
 	client := resty.New()
 	defer client.Close()
-	var response *InvoiceResponse
+	var response InvoiceResponse
 	res, err := client.R().
 		SetAuthToken(t.client.Token).
-		SetBody(invoice).              // default request content type is JSON
-		SetResult(&InvoiceResponse{}). // or SetResult(LoginResponse{}).
-		SetError(&InvoiceResponse{}).  // or SetError(LoginError{}).
+		SetBody(invoice).     // default request content type is JSON
+		SetResult(&response). // or SetResult(LoginResponse{}).
 		Post(t.baserUrl + "/merchant/invoice")
 	if err != nil {
 		return nil, err
 	}
 	if res.IsError() {
-		return nil, errors.New(res.Error().(string))
+		return nil, errors.New(res.String())
 	}
-	response = res.Result().(*InvoiceResponse)
-	return response, nil
+	return &response, nil
 }
 
 func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
@@ -62,12 +60,11 @@ func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
 	}
 	client := resty.New()
 	defer client.Close()
-	var response *InvoiceResponse
+	var response InvoiceResponse
 	res, err := client.R().
 		SetAuthToken(t.client.Token).
 		SetQueryParam("reason", "canceled").
-		SetResult(&InvoiceResponse{}). // or SetResult(LoginResponse{}).
-		SetError(&InvoiceResponse{}).  // or SetError(LoginError{}).
+		SetResult(&response). // or SetResult(LoginResponse{}).
 		Post(t.baserUrl + "/merchant/invoice/cancel/" + invoiceId)
 	if err != nil {
 		return false, err
@@ -75,7 +72,6 @@ func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
 	if res.IsError() {
 		return false, errors.New(res.Error().(string))
 	}
-	response = res.Result().(*InvoiceResponse)
 	if response.Data.Status != "cancelled" {
 		return false, errors.New("invoice not cancelled")
 	}
@@ -89,11 +85,10 @@ func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
 	}
 	client := resty.New()
 	defer client.Close()
-	var response *InvoiceCheckResponse
+	var response InvoiceCheckResponse
 	res, err := client.R().
 		SetAuthToken(t.client.Token).
-		SetResult(&InvoiceCheckResponse{}). // or SetResult(LoginResponse{}).
-		SetError(&InvoiceCheckResponse{}).  // or SetError(LoginError{}).
+		SetResult(&response). // or SetResult(LoginResponse{}).
 		Get(t.baserUrl + "/merchant/invoice/" + invoiceId)
 	if err != nil {
 		return nil, err
@@ -101,8 +96,7 @@ func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
 	if res.IsError() {
 		return nil, errors.New(res.Error().(string))
 	}
-	response = res.Result().(*InvoiceCheckResponse)
-	return response, nil
+	return &response, nil
 }
 
 func (t *tino) CheckTokenExpire() error {
@@ -129,22 +123,23 @@ func (t *tino) CheckTokenExpire() error {
 	}
 	if !t.client.ExpiresAt.Before(time.Now()) {
 		client := resty.New()
+
+		var response *AuthResponse
 		defer client.Close()
 		res, err := client.R().
 			SetBody(AuthRequest{
 				Username: t.username,
 				Password: t.password,
 			}).
-			SetResult(&AuthResponse{}). // or SetResult(LoginResponse{}).
-			SetError(&AuthResponse{}).  // or SetError(LoginError{}).
+			SetResult(&response).      // or SetResult(LoginResponse{}).
+			SetError(&AuthResponse{}). // or SetError(LoginError{}).
 			Post(t.authUrl + "/merchant/login")
 		if err != nil {
 			return err
 		}
 		if res.IsError() {
-			return errors.New(res.Error().(string))
+			return errors.New(res.String())
 		}
-		response := res.Result().(*AuthResponse)
 		t.client = &response.Data
 	}
 	return nil
