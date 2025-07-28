@@ -103,36 +103,34 @@ func (t *tino) CheckTokenExpire() error {
 	if t.client == nil {
 		client := resty.New()
 		defer client.Close()
+		var response AuthResponse
 		res, err := client.R().
 			SetBody(AuthRequest{
 				Username: t.username,
 				Password: t.password,
 			}).
-			SetResult(&AuthResponse{}). // or SetResult(LoginResponse{}).
-			SetError(&AuthResponse{}).  // or SetError(LoginError{}).
+			SetResult(&response). // or SetResult(LoginResponse{}).
 			Post(t.authUrl + "/merchant/login")
 		if err != nil {
 			return err
 		}
 		if res.IsError() {
-			return errors.New(res.Error().(string))
+			return errors.New(res.String())
 		}
-		response := res.Result().(*AuthResponse)
 		t.client = &response.Data
 		return nil
 	}
 	if !t.client.ExpiresAt.Before(time.Now()) {
 		client := resty.New()
 
-		var response *AuthResponse
+		var response AuthResponse
 		defer client.Close()
 		res, err := client.R().
 			SetBody(AuthRequest{
 				Username: t.username,
 				Password: t.password,
 			}).
-			SetResult(&response).      // or SetResult(LoginResponse{}).
-			SetError(&AuthResponse{}). // or SetError(LoginError{}).
+			SetResult(&response). // or SetResult(LoginResponse{}).
 			Post(t.authUrl + "/merchant/login")
 		if err != nil {
 			return err
