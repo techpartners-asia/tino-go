@@ -69,8 +69,8 @@ type (
 		InvoiceID      string    `json:"invoice_id"`
 		Status         string    `json:"status"`
 		Amount         int       `json:"amount"`
-		CouponAmount   int       `json:"coupon_amount"`
-		OriginalAmount int       `json:"original_amount"`
+		CouponAmount   float64   `json:"coupon_amount"`
+		OriginalAmount float64   `json:"original_amount"`
 		PaidAt         time.Time `json:"paid_at"`
 	}
 	InvoiceCallbackResponse struct {
@@ -78,10 +78,10 @@ type (
 		Data InvoiceCallbackData `json:"data"`
 	}
 	InvoiceCallbackData struct {
-		InvoiceID      string `json:"invoice_id"`
-		Status         string `json:"status"`
-		Amount         int    `json:"amount"`
-		CouponAmount   int    `json:"coupon_amount"`
-		OriginalAmount int    `json:"original_amount"`
+		InvoiceID      string  `json:"invoice_id"`
+		Status         string  `json:"status"`
+		Amount         int     `json:"amount"`
+		CouponAmount   float64 `json:"coupon_amount"`
+		OriginalAmount float64 `json:"original_amount"`
 	}
 )
