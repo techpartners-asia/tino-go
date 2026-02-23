@@ -120,7 +120,7 @@ func (t *tino) CheckTokenExpire() error {
 		t.client = &response.Data
 		return nil
 	}
-	if !t.client.ExpiresAt.Before(time.Now()) {
+	if t.client.ExpiresAt.Before(time.Now()) {
 		client := resty.New()
 
 		var response AuthResponse
