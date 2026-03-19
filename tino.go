@@ -2,6 +2,7 @@ package tino
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"resty.dev/v3"
@@ -145,18 +146,23 @@ func (t *tino) CheckTokenExpire() error {
 }
 
 func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
+	err := t.CheckTokenExpire()
+	if err != nil {
+		return nil, err
+	}
 	client := resty.New()
 	defer client.Close()
 	var response UserResponse
 	res, err := client.R().
-		SetAuthToken(token).
+		SetAuthToken(t.client.Token).
 		SetResult(&response).
-		Get(t.authUrl + "/auth/miniapp")
+		Get(t.authUrl + "/auth/miniapp/" + token)
 	if err != nil {
 		return nil, err
 	}
 
 	if res.IsError() {
+		fmt.Println(res.String())
 		return nil, errors.New(res.String())
 	}
 
