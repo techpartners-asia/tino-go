@@ -151,7 +151,7 @@ func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
 	res, err := client.R().
 		SetAuthToken(token).
 		SetResult(&response).
-		Get("/auth/miniapp")
+		Get(t.baserUrl + "/auth/miniapp")
 	if err != nil {
 		return nil, err
 	}
