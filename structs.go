@@ -93,9 +93,14 @@ type (
 	}
 
 	UserInfoResponse struct {
+		ID        string `json:"id"`
 		Email     string `json:"email"`
 		Phone     string `json:"phone"`
 		EbarimtNo string `json:"ebarimt_no"`
-		ID        string `json:"id"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		RegNum    string `json:"reg_num"`
+		Gender    string `json:"gender"`
+		Address   string `json:"address"`
 	}
 )
