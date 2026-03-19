@@ -20,6 +20,7 @@ type Tino interface {
 	CancelInvoice(invoiceId string) (bool, error)
 	CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error)
 	CheckTokenExpire() error
+	GetUser(token string) (*UserInfoResponse, error)
 }
 
 func New(authUrl string, baseURL string, username string, password string) Tino {
@@ -141,4 +142,27 @@ func (t *tino) CheckTokenExpire() error {
 		t.client = &response.Data
 	}
 	return nil
+}
+
+func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
+	client := resty.New()
+	defer client.Close()
+	var response UserResponse
+	res, err := client.R().
+		SetAuthToken(token).
+		SetResult(&response).
+		Get("/auth/miniapp")
+	if err != nil {
+		return nil, err
+	}
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	if !response.Status {
+		return nil, errors.New(response.Message)
+	}
+
+	return &response.Data, nil
 }

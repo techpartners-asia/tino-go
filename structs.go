@@ -1,6 +1,8 @@
 package tino
 
-import "time"
+import (
+	"time"
+)
 
 type BaseResponse struct {
 	Status  bool   `json:"status"`
@@ -83,5 +85,17 @@ type (
 		Amount         float64 `json:"amount"`
 		CouponAmount   float64 `json:"coupon_amount"`
 		OriginalAmount float64 `json:"original_amount"`
+	}
+
+	UserResponse struct {
+		BaseResponse
+		Data UserInfoResponse `json:"data"`
+	}
+
+	UserInfoResponse struct {
+		Email     string `json:"email"`
+		Phone     string `json:"phone"`
+		EbarimtNo string `json:"ebarimt_no"`
+		ID        string `json:"id"`
 	}
 )
