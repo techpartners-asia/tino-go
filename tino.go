@@ -2,7 +2,7 @@ package tino
 
 import (
 	"errors"
-	"fmt"
+	"sync"
 	"time"
 
 	"resty.dev/v3"
@@ -10,69 +10,87 @@ import (
 
 type tino struct {
 	authUrl  string
-	baserUrl string
+	baseUrl  string
 	username string
 	password string
-	client   *AuthData
+
+	auth *AuthData
+	mu   sync.RWMutex
+	refreshMu sync.Mutex // Serializes re-auth calls when mu is unlocked
+
+	client *resty.Client
 }
 
+// Tino [Tino SDK Interface / Интерфэйс]
 type Tino interface {
+	// CreateInvoice [Нэхэмжлэх үүсгэх]
 	CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error)
+
+	// CancelInvoice [Нэхэмжлэх цуцлах]
 	CancelInvoice(invoiceId string) (bool, error)
+
+	// CheckInvoice [Нэхэмжлэхийн төлөв шалгах]
 	CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error)
-	CheckTokenExpire() error
+
+	// GetUser [Хэрэглэгчийн мэдээлэл авах]
 	GetUser(token string) (*UserInfoResponse, error)
 }
 
-func New(authUrl string, baseURL string, username string, password string) Tino {
-	return &tino{
-		authUrl:  authUrl,
-		baserUrl: baseURL,
-		username: username,
-		password: password,
+// Option defines an option for tino initialization.
+type Option func(*tino)
+
+// WithClient [Custom resty.Client ашиглах]
+// This is useful for injecting a client with custom timeouts, certificates, etc.
+func WithClient(client *resty.Client) Option {
+	return func(t *tino) {
+		if client != nil {
+			t.client = client
+		}
 	}
 }
 
+// New [Tino SDK-ийг шинээр үүсгэх]
+// authUrl: Нэвтрэлт болон хэрэглэгчийн мэдээлэл авах URL
+// baseUrl: Төлбөрийн API-н үндсэн URL
+// username: Мерчантын нэвтрэх нэр
+// password: Мерчантын нууц үг
+func New(authUrl, baseUrl, username, password string, options ...Option) Tino {
+	t := &tino{
+		authUrl:  authUrl,
+		baseUrl:  baseUrl,
+		username: username,
+		password: password,
+		client:   resty.New().SetTimeout(60 * time.Second),
+	}
+
+	for _, opt := range options {
+		opt(t)
+	}
+
+	// Attempt login in background to warm the token cache.
+	// If it fails (network down or bad config), authTino will retry
+	// transparently on the first real API call.
+	go t.authTino() //nolint:errcheck
+
+	return t
+}
+
+// CreateInvoice [Нэхэмжлэх үүсгэх]
 func (t *tino) CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error) {
-	err := t.CheckTokenExpire()
-	if err != nil {
-		return nil, err
-	}
-	client := resty.New()
-	defer client.Close()
 	var response InvoiceResponse
-	res, err := client.R().
-		SetAuthToken(t.client.Token).
-		SetBody(invoice).     // default request content type is JSON
-		SetResult(&response). // or SetResult(LoginResponse{}).
-		Post(t.baserUrl + "/merchant/invoice")
+	err := t.httpRequest(t.baseUrl, invoice, &response, TinoInvoiceCreate, "")
 	if err != nil {
 		return nil, err
-	}
-	if res.IsError() {
-		return nil, errors.New(res.String())
 	}
 	return &response, nil
 }
 
+// CancelInvoice [Нэхэмжлэх цуцлах]
 func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
-	err := t.CheckTokenExpire()
-	if err != nil {
-		return false, err
-	}
-	client := resty.New()
-	defer client.Close()
 	var response InvoiceResponse
-	res, err := client.R().
-		SetAuthToken(t.client.Token).
-		SetQueryParam("reason", "canceled").
-		SetResult(&response). // or SetResult(LoginResponse{}).
-		Post(t.baserUrl + "/merchant/invoice/cancel/" + invoiceId)
+	err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCancel, invoiceId+"?reason=canceled")
 	if err != nil {
 		return false, err
-	}
-	if res.IsError() {
-		return false, errors.New(res.Error().(string))
 	}
 	if response.Data.Status != "cancelled" {
 		return false, errors.New("invoice not cancelled")
@@ -80,95 +98,25 @@ func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
 	return true, nil
 }
 
+// CheckInvoice [Нэхэмжлэхийн төлөв шалгах]
 func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
-	err := t.CheckTokenExpire()
-	if err != nil {
-		return nil, err
-	}
-	client := resty.New()
-	defer client.Close()
 	var response InvoiceCheckResponse
-	res, err := client.R().
-		SetAuthToken(t.client.Token).
-		SetResult(&response). // or SetResult(LoginResponse{}).
-		Get(t.baserUrl + "/merchant/invoice/" + invoiceId)
+	err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCheck, invoiceId)
 	if err != nil {
 		return nil, err
-	}
-	if res.IsError() {
-		return nil, errors.New(res.Error().(string))
 	}
 	return &response, nil
 }
 
-func (t *tino) CheckTokenExpire() error {
-	if t.client == nil {
-		client := resty.New()
-		defer client.Close()
-		var response AuthResponse
-		res, err := client.R().
-			SetBody(AuthRequest{
-				Username: t.username,
-				Password: t.password,
-			}).
-			SetResult(&response). // or SetResult(LoginResponse{}).
-			Post(t.authUrl + "/merchant/login")
-		if err != nil {
-			return err
-		}
-		if res.IsError() {
-			return errors.New(res.String())
-		}
-		t.client = &response.Data
-		return nil
-	}
-	if t.client.ExpiresAt.Before(time.Now()) {
-		client := resty.New()
-
-		var response AuthResponse
-		defer client.Close()
-		res, err := client.R().
-			SetBody(AuthRequest{
-				Username: t.username,
-				Password: t.password,
-			}).
-			SetResult(&response). // or SetResult(LoginResponse{}).
-			Post(t.authUrl + "/merchant/login")
-		if err != nil {
-			return err
-		}
-		if res.IsError() {
-			return errors.New(res.String())
-		}
-		t.client = &response.Data
-	}
-	return nil
-}
-
+// GetUser [Хэрэглэгчийн мэдээлэл авах]
 func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
-	err := t.CheckTokenExpire()
-	if err != nil {
-		return nil, err
-	}
-	client := resty.New()
-	defer client.Close()
 	var response UserResponse
-	res, err := client.R().
-		SetAuthToken(t.client.Token).
-		SetResult(&response).
-		Get(t.authUrl + "/auth/miniapp/" + token)
+	err := t.httpRequest(t.authUrl, nil, &response, TinoGetUser, token)
 	if err != nil {
 		return nil, err
 	}
-
-	if res.IsError() {
-		fmt.Println(res.String())
-		return nil, errors.New(res.String())
-	}
-
 	if !response.Status {
 		return nil, errors.New(response.Message)
 	}
-
 	return &response.Data, nil
 }
