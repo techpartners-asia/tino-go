@@ -55,7 +55,7 @@ type (
 		InvoiceID   string    `json:"invoice_id"`
 		MerchantID  string    `json:"merchant_id"`
 		WalletID    string    `json:"wallet_id"`
-		Amount      int       `json:"amount"`
+		Amount      float64   `json:"amount"`
 		Status      string    `json:"status"`
 		QrCode      string    `json:"qr_code"`
 		ExpiresAt   time.Time `json:"expires_at"`
