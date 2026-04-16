@@ -102,5 +102,6 @@ type (
 		RegNum    string `json:"reg_num"`
 		Gender    string `json:"gender"`
 		Address   string `json:"address"`
+		Age       int    `json:"age"`
 	}
 )
