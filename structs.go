@@ -105,3 +105,18 @@ type (
 		Age       int    `json:"age"`
 	}
 )
+
+// notification structs
+type (
+	// NotificationRequest
+	// App: URL path segment of the mini-app (e.g. "zahii"). Required.
+	NotificationRequest struct {
+		App    string `json:"-"`
+		UserID string `json:"user_id"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+	}
+	NotificationResponse struct {
+		BaseResponse
+	}
+)

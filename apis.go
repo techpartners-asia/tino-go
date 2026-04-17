@@ -38,6 +38,12 @@ var (
 		Url:    "/auth/miniapp/",
 		Method: http.MethodGet,
 	}
+	// TinoSendNotification [Mini-app хэрэглэгчид push notification илгээх]
+	// Url suffix only — the app slug is prefixed per-call from NotificationRequest.App.
+	TinoSendNotification = api{
+		Url:    "/notification",
+		Method: http.MethodPost,
+	}
 )
 
 // httpRequest [Internal: Tino API-руу HTTP хүсэлт илгээх туслах функц]

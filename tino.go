@@ -34,6 +34,9 @@ type Tino interface {
 
 	// GetUser [Хэрэглэгчийн мэдээлэл авах]
 	GetUser(token string) (*UserInfoResponse, error)
+
+	// SendNotification [Mini-app хэрэглэгчид push notification илгээх]
+	SendNotification(req *NotificationRequest) (*NotificationResponse, error)
 }
 
 // Option defines an option for tino initialization.
@@ -119,4 +122,34 @@ func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
 		return nil, errors.New(response.Message)
 	}
 	return &response.Data, nil
+}
+
+// SendNotification [Mini-app хэрэглэгчид push notification илгээх]
+// Final URL: {baseUrl}/{req.App}/notification
+func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse, error) {
+	if req == nil {
+		return nil, errors.New("notification request is required")
+	}
+	if req.App == "" {
+		return nil, errors.New("app is required")
+	}
+	if req.UserID == "" {
+		return nil, errors.New("user_id is required")
+	}
+
+	// Prefix the app slug onto the endpoint path. Copy TinoSendNotification so
+	// the shared api{} global stays immutable across concurrent callers.
+	endpoint := api{
+		Url:    "/" + req.App + TinoSendNotification.Url,
+		Method: TinoSendNotification.Method,
+	}
+
+	var response NotificationResponse
+	if err := t.httpRequest(t.baseUrl, req, &response, endpoint, ""); err != nil {
+		return nil, err
+	}
+	if !response.Status {
+		return nil, errors.New(response.Message)
+	}
+	return &response, nil
 }
