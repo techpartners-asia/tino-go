@@ -58,7 +58,7 @@ type (
 		Amount      float64   `json:"amount"`
 		Status      string    `json:"status"`
 		QrCode      string    `json:"qr_code"`
-		DeepLink string `json:"deep_link"`
+		DeepLink    string    `json:"deep_link"`
 		ExpiresAt   time.Time `json:"expires_at"`
 		CallbackURL string    `json:"callback_url"`
 		CreatedAt   time.Time `json:"created_at"`
@@ -94,16 +94,17 @@ type (
 	}
 
 	UserInfoResponse struct {
-		ID        string `json:"id"`
-		Email     string `json:"email"`
-		Phone     string `json:"phone"`
-		EbarimtNo string `json:"ebarimt_no"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		RegNum    string `json:"reg_num"`
-		Gender    string `json:"gender"`
-		Address   string `json:"address"`
-		Age       int    `json:"age"`
+		ID          string `json:"id"`
+		Email       string `json:"email"`
+		Phone       string `json:"phone"`
+		EbarimtNo   string `json:"ebarimt_no"`
+		FirstName   string `json:"first_name"`
+		LastName    string `json:"last_name"`
+		RegNum      string `json:"reg_num"`
+		Gender      string `json:"gender"`
+		Address     string `json:"address"`
+		Age         int    `json:"age"`
+		CountryName string `json:"country_name"`
 	}
 )
 
