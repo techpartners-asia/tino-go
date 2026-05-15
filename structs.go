@@ -58,6 +58,7 @@ type (
 		Amount      float64   `json:"amount"`
 		Status      string    `json:"status"`
 		QrCode      string    `json:"qr_code"`
+		DeepLink string `json:"deep_link"`
 		ExpiresAt   time.Time `json:"expires_at"`
 		CallbackURL string    `json:"callback_url"`
 		CreatedAt   time.Time `json:"created_at"`
