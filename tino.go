@@ -37,6 +37,9 @@ type Tino interface {
 
 	// SendNotification [Mini-app хэрэглэгчид push notification илгээх]
 	SendNotification(req *NotificationRequest) (*NotificationResponse, error)
+
+	// CheckAutoSettlementOutbox [Авто тооцооны outbox invoice шалгах]
+	CheckAutoSettlementOutbox(invoiceId string) (*AutoSettlementOutboxResponse, error)
 }
 
 // Option defines an option for tino initialization.
@@ -122,6 +125,19 @@ func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
 		return nil, errors.New(response.Message)
 	}
 	return &response.Data, nil
+}
+
+// CheckAutoSettlementOutbox [Авто тооцооны outbox invoice шалгах]
+func (t *tino) CheckAutoSettlementOutbox(invoiceId string) (*AutoSettlementOutboxResponse, error) {
+	var response AutoSettlementOutboxResponse
+	err := t.httpRequest(t.baseUrl, nil, &response, TinoAutoSettlementOutboxInvoice, invoiceId)
+	if err != nil {
+		return nil, err
+	}
+	if !response.Status {
+		return nil, errors.New(response.Message)
+	}
+	return &response, nil
 }
 
 // SendNotification [Mini-app хэрэглэгчид push notification илгээх]

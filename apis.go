@@ -44,6 +44,11 @@ var (
 		Url:    "/notification",
 		Method: http.MethodPost,
 	}
+	// TinoAutoSettlementOutboxInvoice [Авто тооцооны outbox invoice шалгах]
+	TinoAutoSettlementOutboxInvoice = api{
+		Url:    "/merchant/settlements/auto-settlement-outbox/invoice/",
+		Method: http.MethodGet,
+	}
 )
 
 // httpRequest [Internal: Tino API-руу HTTP хүсэлт илгээх туслах функц]

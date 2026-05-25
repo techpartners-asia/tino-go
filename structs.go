@@ -108,6 +108,23 @@ type (
 	}
 )
 
+// auto-settlement outbox structs
+type (
+	AutoSettlementOutboxResponse struct {
+		BaseResponse
+		Data AutoSettlementOutboxData `json:"data"`
+	}
+	AutoSettlementOutboxData struct {
+		InvoiceID       string    `json:"invoice_id"`
+		InvoicePaid     bool      `json:"invoice_paid"`
+		TransactionID   string    `json:"transaction_id"`
+		OutboxID        string    `json:"outbox_id"`
+		OutboxStatus    string    `json:"outbox_status"`
+		TransferSuccess bool      `json:"transfer_success"`
+		LastAttemptAt   time.Time `json:"last_attempt_at"`
+	}
+)
+
 // notification structs
 type (
 	// NotificationRequest
