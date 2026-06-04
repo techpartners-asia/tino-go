@@ -28,11 +28,21 @@ type (
 		ExpiresAt       time.Time    `json:"expires_at"`
 	}
 	AuthUserData struct {
-		ID        string    `json:"id"`
-		Email     string    `json:"email"`
-		Profile   string    `json:"profile"`
-		Status    string    `json:"status"`
-		CreatedAt time.Time `json:"created_at"`
+		ID        string          `json:"id"`
+		Email     string          `json:"email"`
+		Profile   ProfileResponse `json:"profile"`
+		Status    string          `json:"status"`
+		CreatedAt time.Time       `json:"created_at"`
+	}
+
+	ProfileResponse struct {
+		Description    string   `json:"description"`
+		MerchantCode   string   `json:"merchant_code"`
+		MerchantID     string   `json:"merchant_id"`
+		MerchantName   string   `json:"merchant_name"`
+		MerchantUserID string   `json:"merchant_user_id"`
+		Role           string   `json:"role"`
+		WalletIDs      []string `json:"wallet_ids"`
 	}
 )
 
