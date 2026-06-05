@@ -115,6 +115,7 @@ type (
 		Address     string `json:"address"`
 		Age         int    `json:"age"`
 		CountryName string `json:"country_name"`
+		KycStatus   string `json:"kyc_status"`
 	}
 )
 
