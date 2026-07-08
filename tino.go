@@ -170,7 +170,7 @@ func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse
 	}
 
 	var response NotificationResponse
-	if err := t.httpRequestBasicAuth(t.baseUrl, req, &response, endpoint, "", req.Auth.Username, req.Auth.Password); err != nil {
+	if err := t.httpRequestBasicAuth(t.baseUrl, req, &response, endpoint, "", req.Auth); err != nil {
 		return nil, err
 	}
 	if !response.Status {
