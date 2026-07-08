@@ -62,7 +62,7 @@ var (
 //   - Basic Authentication-д config.yml дахь tino-client.username болон
 //     tino-client.password тохиргоог ашиглахгүй (хэрэв notofication дээр ашиглахаар бол).
 //   - Bearer Token ашигладаг httpRequest функцээс тусдаа ажиллана.
-func (t *tino) httpRequestBasicAuth(baseURL string, body any, result any, endpoint api, urlExt string, basicAuth *BasicAuthData) error {
+func (t *tino) httpRequestBasicAuth(baseURL string, body any, result any, endpoint api, urlExt string, basicAuth *BasicAuth) error {
 	url := baseURL + endpoint.Url + urlExt
 
 	req := t.client.R().

@@ -27,7 +27,7 @@ type (
 		RefreshExpireAt time.Time    `json:"refresh_expires_at"`
 		ExpiresAt       time.Time    `json:"expires_at"`
 	}
-	BasicAuthData struct {
+	BasicAuth struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -146,11 +146,11 @@ type (
 	// App: URL path segment of the mini-app (e.g. "zahii"). Required.
 	// Auth: Тусдаа username password байгаа шүү
 	NotificationRequest struct {
-		Auth   *BasicAuthData `json:"auth"`
-		App    string         `json:"-"`
-		UserID string         `json:"user_id"`
-		Title  string         `json:"title"`
-		Body   string         `json:"body"`
+		Auth   *BasicAuth `json:"auth"`
+		App    string     `json:"-"`
+		UserID string     `json:"user_id"`
+		Title  string     `json:"title"`
+		Body   string     `json:"body"`
 	}
 	NotificationResponse struct {
 		BaseResponse
