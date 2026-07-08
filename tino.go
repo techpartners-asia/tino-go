@@ -14,8 +14,8 @@ type tino struct {
 	username string
 	password string
 
-	auth *AuthData
-	mu   sync.RWMutex
+	auth      *AuthData
+	mu        sync.RWMutex
 	refreshMu sync.Mutex // Serializes re-auth calls when mu is unlocked
 
 	client *resty.Client
@@ -161,7 +161,7 @@ func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse
 	}
 
 	var response NotificationResponse
-	if err := t.httpRequest(t.baseUrl, req, &response, endpoint, ""); err != nil {
+	if err := t.httpRequestBasicAuth(t.baseUrl, req, &response, endpoint, "", req.Auth.Username, req.Auth.Password); err != nil {
 		return nil, err
 	}
 	if !response.Status {

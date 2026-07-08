@@ -51,6 +51,46 @@ var (
 	}
 )
 
+// httpRequestBasicAuth [Internal: Tino API-руу Basic Authentication ашиглан HTTP хүсэлт илгээх туслах функц]
+// baseUrl: Хүсэлт илгээх үндсэн URL
+// body: Хүсэлтийн бие (POST/PUT үед)
+// result: Хариуг задлах бүтэц (struct pointer)
+// endpoint: API төрлийн эндпоинтын тохиргоо
+// urlExt: URL-д залгагдах нэмэлт зам эсвэл ID (notification_id гэх мэт)
+//
+// Note:
+//   - Basic Authentication-д config.yml дахь tino-client.username болон
+//     tino-client.password тохиргоог ашиглахгүй (хэрэв notofication дээр ашиглахаар бол).
+//   - Bearer Token ашигладаг httpRequest функцээс тусдаа ажиллана.
+func (t *tino) httpRequestBasicAuth(baseURL string, body any, result any, endpoint api, urlExt string, username string, password string) error {
+	url := baseURL + endpoint.Url + urlExt
+
+	req := t.client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBasicAuth(username, password).
+		SetResult(result)
+
+	if body != nil {
+		req.SetBody(body)
+	}
+
+	res, err := req.Execute(endpoint.Method, url)
+	if err != nil {
+		return err
+	}
+
+	if res.IsError() {
+		return fmt.Errorf(
+			"%s-Tino response error: %s (Status: %d)",
+			time.Now().Format("2006-01-02 15:04:05"),
+			res.String(),
+			res.StatusCode(),
+		)
+	}
+
+	return nil
+}
+
 // httpRequest [Internal: Tino API-руу HTTP хүсэлт илгээх туслах функц]
 // baseUrl: Хүсэлт илгээх үндсэн URL (authUrl эсвэл baseUrl)
 // body: Хүсэлтийн бие (POST үед)
