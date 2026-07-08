@@ -146,11 +146,11 @@ type (
 	// App: URL path segment of the mini-app (e.g. "zahii"). Required.
 	// Auth: Тусдаа username password байгаа шүү
 	NotificationRequest struct {
-		Auth   AuthRequest `json:"auth"`
-		App    string      `json:"-"`
-		UserID string      `json:"user_id"`
-		Title  string      `json:"title"`
-		Body   string      `json:"body"`
+		Auth   *AuthRequest `json:"auth"`
+		App    string       `json:"-"`
+		UserID string       `json:"user_id"`
+		Title  string       `json:"title"`
+		Body   string       `json:"body"`
 	}
 	NotificationResponse struct {
 		BaseResponse

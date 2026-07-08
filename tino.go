@@ -146,6 +146,15 @@ func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse
 	if req == nil {
 		return nil, errors.New("notification request is required")
 	}
+	if req.Auth == nil {
+		return nil, errors.New("auth request is required")
+	}
+	if req.Auth.Username == "" {
+		return nil, errors.New("auth username request is required")
+	}
+	if req.Auth.Password == "" {
+		return nil, errors.New("auth password request is required")
+	}
 	if req.App == "" {
 		return nil, errors.New("app is required")
 	}
