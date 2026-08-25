@@ -2,6 +2,9 @@ package tino
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +50,9 @@ type Option func(*tino)
 
 // WithClient [Custom resty.Client ашиглах]
 // This is useful for injecting a client with custom timeouts, certificates, etc.
+//
+// A custom client replaces the default one entirely, so it should set its own
+// timeout and response body limit.
 func WithClient(client *resty.Client) Option {
 	return func(t *tino) {
 		if client != nil {
@@ -62,11 +68,13 @@ func WithClient(client *resty.Client) Option {
 // password: Мерчантын нууц үг
 func New(authUrl, baseUrl, username, password string, options ...Option) Tino {
 	t := &tino{
-		authUrl:  authUrl,
-		baseUrl:  baseUrl,
+		authUrl:  strings.TrimSuffix(authUrl, "/"),
+		baseUrl:  strings.TrimSuffix(baseUrl, "/"),
 		username: username,
 		password: password,
-		client:   resty.New().SetTimeout(60 * time.Second),
+		client: resty.New().
+			SetTimeout(60 * time.Second).
+			SetResponseBodyLimit(maxResponseBodySize),
 	}
 
 	for _, opt := range options {
@@ -83,60 +91,105 @@ func New(authUrl, baseUrl, username, password string, options ...Option) Tino {
 
 // CreateInvoice [Нэхэмжлэх үүсгэх]
 func (t *tino) CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error) {
+	if invoice == nil {
+		return nil, errors.New("tino: invoice request is required")
+	}
+
 	var response InvoiceResponse
-	err := t.httpRequest(t.baseUrl, invoice, &response, TinoInvoiceCreate, "")
-	if err != nil {
+	if err := t.httpRequest(t.baseUrl, invoice, &response, TinoInvoiceCreate, "", nil); err != nil {
 		return nil, err
 	}
+
+	// The gateway reports business failures as HTTP 200 + {"status":false}.
+	// Without this check the caller received a nil error and an invoice with an
+	// empty InvoiceID and a zero Amount.
+	if !response.Status {
+		return nil, fmt.Errorf("tino: create invoice failed: %s",
+			messageOr(response.Message, "gateway rejected the invoice"))
+	}
+
 	return &response, nil
 }
 
 // CancelInvoice [Нэхэмжлэх цуцлах]
 func (t *tino) CancelInvoice(invoiceId string) (bool, error) {
+	if strings.TrimSpace(invoiceId) == "" {
+		return false, errors.New("tino: invoice id is required")
+	}
+
 	var response InvoiceResponse
-	err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCancel, invoiceId+"?reason=canceled")
-	if err != nil {
+	// `reason` goes through url.Values instead of being concatenated onto the
+	// ID: an ID containing '#' used to swallow the whole query string, and one
+	// containing '?' produced a malformed duplicate parameter.
+	query := url.Values{"reason": []string{"canceled"}}
+
+	if err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCancel, invoiceId, query); err != nil {
 		return false, err
 	}
-	if response.Data.Status != "cancelled" {
-		return false, errors.New("invoice not cancelled")
+	if !response.Status {
+		return false, fmt.Errorf("tino: cancel invoice failed: %s",
+			messageOr(response.Message, "gateway rejected the cancellation"))
 	}
+	if response.Data.Status != "cancelled" {
+		return false, fmt.Errorf("tino: invoice not cancelled (status: %q)", response.Data.Status)
+	}
+
 	return true, nil
 }
 
 // CheckInvoice [Нэхэмжлэхийн төлөв шалгах]
 func (t *tino) CheckInvoice(invoiceId string) (*InvoiceCheckResponse, error) {
+	if strings.TrimSpace(invoiceId) == "" {
+		return nil, errors.New("tino: invoice id is required")
+	}
+
 	var response InvoiceCheckResponse
-	err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCheck, invoiceId)
-	if err != nil {
+	if err := t.httpRequest(t.baseUrl, nil, &response, TinoInvoiceCheck, invoiceId, nil); err != nil {
 		return nil, err
 	}
+	if !response.Status {
+		return nil, fmt.Errorf("tino: check invoice failed: %s",
+			messageOr(response.Message, "gateway returned an unsuccessful status"))
+	}
+
 	return &response, nil
 }
 
 // GetUser [Хэрэглэгчийн мэдээлэл авах]
 func (t *tino) GetUser(token string) (*UserInfoResponse, error) {
+	// An empty token used to produce a request to the bare collection endpoint
+	// "/auth/miniapp/" rather than a lookup for one user.
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("tino: user token is required")
+	}
+
 	var response UserResponse
-	err := t.httpRequest(t.authUrl, nil, &response, TinoGetUser, token)
-	if err != nil {
+	if err := t.httpRequest(t.authUrl, nil, &response, TinoGetUser, token, nil); err != nil {
 		return nil, err
 	}
 	if !response.Status {
-		return nil, errors.New(response.Message)
+		return nil, fmt.Errorf("tino: get user failed: %s",
+			messageOr(response.Message, "gateway returned an unsuccessful status"))
 	}
+
 	return &response.Data, nil
 }
 
 // CheckAutoSettlementOutbox [Авто тооцооны outbox invoice шалгах]
 func (t *tino) CheckAutoSettlementOutbox(invoiceId string) (*AutoSettlementOutboxResponse, error) {
+	if strings.TrimSpace(invoiceId) == "" {
+		return nil, errors.New("tino: invoice id is required")
+	}
+
 	var response AutoSettlementOutboxResponse
-	err := t.httpRequest(t.baseUrl, nil, &response, TinoAutoSettlementOutboxInvoice, invoiceId)
-	if err != nil {
+	if err := t.httpRequest(t.baseUrl, nil, &response, TinoAutoSettlementOutboxInvoice, invoiceId, nil); err != nil {
 		return nil, err
 	}
 	if !response.Status {
-		return nil, errors.New(response.Message)
+		return nil, fmt.Errorf("tino: check auto-settlement outbox failed: %s",
+			messageOr(response.Message, "gateway returned an unsuccessful status"))
 	}
+
 	return &response, nil
 }
 
@@ -163,9 +216,10 @@ func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse
 	}
 
 	// Prefix the app slug onto the endpoint path. Copy TinoSendNotification so
-	// the shared api{} global stays immutable across concurrent callers.
+	// the shared api{} global stays immutable across concurrent callers, and
+	// escape the slug so it cannot traverse to another endpoint.
 	endpoint := api{
-		Url:    "/" + req.App + TinoSendNotification.Url,
+		Url:    "/" + url.PathEscape(req.App) + TinoSendNotification.Url,
 		Method: TinoSendNotification.Method,
 	}
 
@@ -174,7 +228,9 @@ func (t *tino) SendNotification(req *NotificationRequest) (*NotificationResponse
 		return nil, err
 	}
 	if !response.Status {
-		return nil, errors.New(response.Message)
+		return nil, fmt.Errorf("tino: send notification failed: %s",
+			messageOr(response.Message, "gateway returned an unsuccessful status"))
 	}
+
 	return &response, nil
 }
