@@ -146,7 +146,12 @@ type (
 	// App: URL path segment of the mini-app (e.g. "zahii"). Required.
 	// Auth: Тусдаа username password байгаа шүү
 	NotificationRequest struct {
-		Auth   *BasicAuth `json:"auth"`
+		// Auth is sent as an HTTP Basic Authorization header only. It is
+		// deliberately excluded from the JSON body: serialising it there put
+		// the plaintext password into the request payload as well, where any
+		// request-body logging on the gateway or an intermediary would capture
+		// it alongside the header.
+		Auth   *BasicAuth `json:"-"`
 		App    string     `json:"-"`
 		UserID string     `json:"user_id"`
 		Title  string     `json:"title"`
