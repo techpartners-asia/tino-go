@@ -148,7 +148,7 @@ func finish(res *resty.Response, result any) error {
 		defer func() { _ = res.Body.Close() }()
 	}
 
-	if !res.IsStatusSuccess() {
+	if !res.IsSuccess() {
 		return fmt.Errorf(
 			"%s-Tino response error: %s (Status: %d)",
 			time.Now().Format("2006-01-02 15:04:05"),
