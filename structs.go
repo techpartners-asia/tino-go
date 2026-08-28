@@ -83,12 +83,14 @@ type (
 		Data InvoiceCheckData `json:"data"`
 	}
 	InvoiceCheckData struct {
-		InvoiceID      string    `json:"invoice_id"`
-		Status         string    `json:"status"`
-		Amount         float64   `json:"amount"`
-		CouponAmount   float64   `json:"coupon_amount"`
-		OriginalAmount float64   `json:"original_amount"`
-		PaidAt         time.Time `json:"paid_at"`
+		InvoiceID          string    `json:"invoice_id"`
+		Status             string    `json:"status"`
+		Amount             float64   `json:"amount"`
+		CouponAmount       float64   `json:"coupon_amount"`
+		OriginalAmount     float64   `json:"original_amount"`
+		PaidAt             time.Time `json:"paid_at"`
+		OrganizationRegNum string    `json:"organization_reg_num"`
+		OrganizationName   string    `json:"organization_name"`
 	}
 	InvoiceCallbackResponse struct {
 		BaseResponse
