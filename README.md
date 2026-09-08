@@ -47,9 +47,36 @@ func main() {
 }
 ```
 
-The client authenticates on first use and caches the merchant token, refreshing
-it automatically before it expires. It is safe for concurrent use by multiple
-goroutines.
+**The caller owns the merchant token.** The client does not cache one, does not
+renew it in the background, and does not log in on your behalf: call `Login`,
+install the result with `SetToken`, and every call carries it. `New()` performs
+no network I/O, and the token accessors are mutex-guarded, so a client is safe
+for concurrent use.
+
+```go
+client := tino.New(authURL, baseURL, username, password)
+
+token, err := client.Login(ctx)
+if err != nil {
+	return err
+}
+client.SetToken(token)
+```
+
+`Token.ExpiresAt` is when to replace it, and is always set: when the gateway
+omits `expires_at`, `Login` fills in `FallbackTokenTTL` rather than leaving a
+zero time that would make every call re-authenticate. Tino exposes no refresh
+endpoint, so renewal is another `Login`.
+
+Two errors are worth matching with `errors.Is`:
+
+- `ErrNoToken` — a call was made before `SetToken`. A wiring mistake, not a
+  gateway failure.
+- `ErrUnauthorized` — the gateway refused the token with `401`/`403`. Log in
+  again and retry; see below.
+
+`WithToken(t)` installs a token at construction, for a caller that already holds
+a valid one.
 
 ## API
 
@@ -114,8 +141,23 @@ if err != nil {
 use(res.Data.InvoiceID)
 ```
 
-If the gateway rejects the cached token with `401`/`403`, the client
-re-authenticates and retries the call once, transparently.
+If the gateway rejects the installed token with `401`/`403`, the call returns
+`ErrUnauthorized`. The client no longer re-authenticates and retries by itself —
+it cannot, because replacing a token it does not own would be invisible to
+whoever does. The retry is two lines, and it is safe for every verb here: a
+refused request was never processed, so nothing can be double-created.
+
+```go
+res, err := client.CreateInvoice(req)
+if errors.Is(err, tino.ErrUnauthorized) {
+	token, err := client.Login(ctx)
+	if err != nil {
+		return err
+	}
+	client.SetToken(token)
+	res, err = client.CreateInvoice(req)
+}
+```
 
 ## Custom HTTP client
 
