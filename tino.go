@@ -1,6 +1,7 @@
 package tino
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -17,15 +18,35 @@ type tino struct {
 	username string
 	password string
 
-	auth      *AuthData
-	mu        sync.RWMutex
-	refreshMu sync.Mutex // Serializes re-auth calls when mu is unlocked
+	// token is the credential installed by SetToken. The SDK reads it and
+	// never populates it on its own: expiry tracking, renewal and
+	// deduplication of concurrent logins all belong to the caller, which is
+	// the only layer that knows whether the token is shared beyond this
+	// process. See Token.
+	mu    sync.RWMutex
+	token Token
 
 	client *resty.Client
 }
 
 // Tino [Tino SDK Interface / Интерфэйс]
+//
+// # Authentication
+//
+// This SDK does not manage tokens. Obtain one with [Tino.Login], install it
+// with [Tino.SetToken], and every call below carries it. A call made with no
+// token installed fails with [ErrNoToken]; a call whose token Tino rejects
+// fails with [ErrUnauthorized], which is the signal to log in again and retry.
 type Tino interface {
+	// Login [Access Token авах] — one request, no caching.
+	Login(ctx context.Context) (Token, error)
+
+	// SetToken installs the token subsequent calls carry.
+	SetToken(token Token)
+
+	// Token returns the installed token.
+	Token() Token
+
 	// CreateInvoice [Нэхэмжлэх үүсгэх]
 	CreateInvoice(invoice *InvoiceRequest) (*InvoiceResponse, error)
 
@@ -48,6 +69,16 @@ type Tino interface {
 // Option defines an option for tino initialization.
 type Option func(*tino)
 
+// WithToken [Токеныг эхлүүлэхдээ шингээх]
+// Installs a token at construction time, for a caller that already holds a
+// valid one — from a shared cache, say — and wants the first call to go out
+// authenticated without a login round trip.
+func WithToken(token Token) Option {
+	return func(t *tino) {
+		t.token = token
+	}
+}
+
 // WithClient [Custom resty.Client ашиглах]
 // This is useful for injecting a client with custom timeouts, certificates, etc.
 //
@@ -66,6 +97,9 @@ func WithClient(client *resty.Client) Option {
 // baseUrl: Төлбөрийн API-н үндсэн URL
 // username: Мерчантын нэвтрэх нэр
 // password: Мерчантын нууц үг
+//
+// New performs no network I/O. The returned client has no token until one is
+// installed with [Tino.SetToken] or [WithToken]; see [Tino] on authentication.
 func New(authUrl, baseUrl, username, password string, options ...Option) Tino {
 	t := &tino{
 		authUrl:  strings.TrimSuffix(authUrl, "/"),
@@ -80,11 +114,6 @@ func New(authUrl, baseUrl, username, password string, options ...Option) Tino {
 	for _, opt := range options {
 		opt(t)
 	}
-
-	// Attempt login in background to warm the token cache.
-	// If it fails (network down or bad config), authTino will retry
-	// transparently on the first real API call.
-	go t.authTino() //nolint:errcheck
 
 	return t
 }

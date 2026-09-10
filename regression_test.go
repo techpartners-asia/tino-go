@@ -1,7 +1,9 @@
 package tino
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -51,6 +53,20 @@ func newServer(t *testing.T, h func(w http.ResponseWriter, r *http.Request)) (*h
 	return s, c
 }
 
+// newAuthed returns a client that has logged in and installed the token,
+// which is the state every API-level test needs: the SDK no longer logs in on
+// its own.
+func newAuthed(t *testing.T, authURL, baseURL string) Tino {
+	t.Helper()
+	cl := New(authURL, baseURL, "u", "p")
+	tok, err := cl.Login(context.Background())
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	cl.SetToken(tok)
+	return cl
+}
+
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
@@ -61,7 +77,7 @@ func TestFix_PathEscaping(t *testing.T) {
 	s, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": true, "data": map[string]any{"status": "cancelled"}})
 	})
-	cl := New(s.URL, s.URL, "u", "p")
+	cl := newAuthed(t, s.URL, s.URL)
 
 	_, _ = cl.GetUser("../../merchant/settlements/auto-settlement-outbox/invoice/123")
 	// The whole value must stay inside one path segment: every "/" escaped to
@@ -101,11 +117,18 @@ func TestFix_AuthStatusFalse(t *testing.T) {
 	}))
 	t.Cleanup(s.Close)
 
-	_, err := New(s.URL, s.URL, "bad", "bad").CheckInvoice("inv1")
+	cl := New(s.URL, s.URL, "bad", "bad")
+	_, err := cl.Login(context.Background())
 	if err == nil {
 		t.Fatal("expected auth error, got nil")
 	}
 	t.Logf("OK auth failure surfaced: %v", err)
+
+	// And with no token installed, an API call must not reach the gateway at
+	// all — it used to log in implicitly and go out with an empty bearer.
+	if _, err := cl.CheckInvoice("inv1"); !errors.Is(err, ErrNoToken) {
+		t.Fatalf("expected ErrNoToken, got %v", err)
+	}
 }
 
 // FIX 3: business failures (status:false) surface as errors on every method.
@@ -113,7 +136,7 @@ func TestFix_StatusFalseIsError(t *testing.T) {
 	s, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": false, "message": "insufficient funds"})
 	})
-	cl := New(s.URL, s.URL, "u", "p")
+	cl := newAuthed(t, s.URL, s.URL)
 
 	if _, err := cl.CreateInvoice(&InvoiceRequest{Amount: 1000}); err == nil {
 		t.Error("CreateInvoice: expected error")
@@ -137,7 +160,7 @@ func TestFix_NoEmptyErrorText(t *testing.T) {
 	s, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": false})
 	})
-	_, err := New(s.URL, s.URL, "u", "p").GetUser("tok")
+	_, err := newAuthed(t, s.URL, s.URL).GetUser("tok")
 	if err == nil || strings.TrimSpace(err.Error()) == "" {
 		t.Fatalf("empty/nil error text: %v", err)
 	}
@@ -165,7 +188,7 @@ func TestFix_3xxIsErrorAndNoLeak(t *testing.T) {
 	s.Start()
 	t.Cleanup(s.Close)
 
-	cl := New(s.URL, s.URL, "u", "p")
+	cl := newAuthed(t, s.URL, s.URL)
 	for i := 0; i < 5; i++ {
 		if _, err := cl.CheckInvoice(fmt.Sprintf("inv%d", i)); err == nil {
 			t.Fatal("300 should be an error")
@@ -184,7 +207,7 @@ func TestFix_NonJSON200(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "<html>WAF block page</html>")
 	})
-	if _, err := New(s.URL, s.URL, "u", "p").CreateInvoice(&InvoiceRequest{Amount: 1}); err == nil {
+	if _, err := newAuthed(t, s.URL, s.URL).CreateInvoice(&InvoiceRequest{Amount: 1}); err == nil {
 		t.Error("expected decode error")
 	} else {
 		t.Logf("OK non-JSON 200 rejected: %v", err)
@@ -196,7 +219,7 @@ func TestFix_NilBody(t *testing.T) {
 	s, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": true})
 	})
-	if _, err := New(s.URL, s.URL, "u", "p").CreateInvoice(nil); err == nil {
+	if _, err := newAuthed(t, s.URL, s.URL).CreateInvoice(nil); err == nil {
 		t.Error("expected error for nil invoice")
 	} else {
 		t.Logf("OK nil invoice rejected: %v ; body seen by server=%q", err, c.get(&c.body))
@@ -208,7 +231,7 @@ func TestFix_NotificationCredsNotInBody(t *testing.T) {
 	s, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": true})
 	})
-	_, err := New(s.URL, s.URL, "u", "p").SendNotification(&NotificationRequest{
+	_, err := newAuthed(t, s.URL, s.URL).SendNotification(&NotificationRequest{
 		Auth:   &BasicAuth{Username: "notif-user", Password: "SUPER-SECRET"},
 		App:    "zahii",
 		UserID: "u1", Title: "hi", Body: "there",
@@ -227,8 +250,11 @@ func TestFix_NotificationCredsNotInBody(t *testing.T) {
 	t.Logf("OK Authorization header still set: %s", c.get(&c.authz))
 }
 
-// FIX 9: a rejected (401) token is dropped and the call retried once.
-func TestFix_RetryOn401(t *testing.T) {
+// FIX 9: a rejected (401) token is reported as ErrUnauthorized so its owner
+// can replace it. The SDK used to drop and retry from its own cache; it cannot
+// any more, because replacing a token it does not own would be invisible to
+// whoever does.
+func TestFix_RejectedTokenIsReportedAndRecoverable(t *testing.T) {
 	var logins, calls int64
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/merchant/login" {
@@ -254,11 +280,23 @@ func TestFix_RetryOn401(t *testing.T) {
 	}))
 	t.Cleanup(s.Close)
 
-	cl := New(s.URL, s.URL, "u", "p")
-	time.Sleep(50 * time.Millisecond) // let the warm-up login land so TOK1 is cached
+	cl := newAuthed(t, s.URL, s.URL) // installs TOK1
+
+	_, err := cl.CreateInvoice(&InvoiceRequest{Amount: 1})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+
+	// The caller's half of the contract: log in again, install, retry once.
+	tok, err := cl.Login(context.Background())
+	if err != nil {
+		t.Fatalf("re-login: %v", err)
+	}
+	cl.SetToken(tok)
+
 	res, err := cl.CreateInvoice(&InvoiceRequest{Amount: 1})
 	if err != nil {
-		t.Fatalf("expected transparent recovery, got %v", err)
+		t.Fatalf("expected recovery after replacing the token, got %v", err)
 	}
 	t.Logf("OK recovered after 401: invoice=%s (logins=%d, api calls=%d)",
 		res.Data.InvoiceID, atomic.LoadInt64(&logins), atomic.LoadInt64(&calls))
@@ -269,7 +307,7 @@ func TestFix_Concurrent(t *testing.T) {
 	s, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]any{"status": true, "data": map[string]any{}})
 	})
-	cl := New(s.URL, s.URL, "u", "p")
+	cl := newAuthed(t, s.URL, s.URL)
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)

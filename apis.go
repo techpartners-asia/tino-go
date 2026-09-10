@@ -1,6 +1,7 @@
 package tino
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,14 +24,6 @@ const (
 	// maxErrorBodyLen caps how much of a response body is embedded into an error
 	// so a large or hostile response cannot blow up the caller's logs.
 	maxErrorBodyLen = 512
-
-	// fallbackTokenTTL is applied when the gateway omits `expires_at`. Without
-	// it a zero ExpiresAt makes every single call re-authenticate, which turns
-	// normal traffic into a login flood against the gateway.
-	fallbackTokenTTL = 5 * time.Minute
-
-	// tokenRenewBefore renews the token this long before it actually expires.
-	tokenRenewBefore = 1 * time.Minute
 
 	// maxResponseBodySize bounds an individual response body.
 	maxResponseBodySize = 10 << 20 // 10 MiB
@@ -234,86 +227,54 @@ func (t *tino) httpRequestBasicAuth(baseURL string, body any, result any, endpoi
 // urlExt: URL-д залгагдах нэмэлт ID (invoice_id г.м) — дотооддоо escape хийгдэнэ
 // query: Query parameter-ууд (заавал биш)
 func (t *tino) httpRequest(baseUrl string, body any, result any, endpoint api, urlExt string, query url.Values) error {
-	auth, err := t.authTino()
-	if err != nil {
-		return err
+	token := t.Token()
+	if token.IsZero() {
+		// The SDK no longer authenticates behind the caller's back, so an
+		// absent token is reported rather than quietly fetched.
+		return ErrNoToken
 	}
 
 	target := buildURL(baseUrl, endpoint, urlExt, query)
 
-	res, err := t.newRequest(auth.Token, body).Execute(endpoint.Method, target)
+	res, err := t.newRequest(token.AccessToken, body).Execute(endpoint.Method, target)
 	if err != nil {
 		return err
 	}
 
-	// A 401/403 means the cached token was rejected — revoked, or expired
-	// earlier than advertised. Drop it and retry once with a fresh token.
-	// Retrying is safe for every verb here: a rejected request was never
-	// processed by the gateway, so no invoice can be double-created.
+	// A 401/403 means the token was rejected — revoked, or expired earlier
+	// than advertised. The SDK used to drop it and retry from its own cache;
+	// with the token owned outside, it reports ErrUnauthorized instead so the
+	// owner can replace it and retry. Retrying is safe for every verb here: a
+	// rejected request was never processed by the gateway, so no invoice can
+	// be double-created.
 	if res.StatusCode() == http.StatusUnauthorized || res.StatusCode() == http.StatusForbidden {
-		_ = res.Bytes()
+		body := res.Bytes()
 		if res.Body != nil {
 			_ = res.Body.Close()
 		}
-
-		t.invalidateAuth(auth.Token)
-
-		auth, err = t.authTino()
-		if err != nil {
-			return err
-		}
-		res, err = t.newRequest(auth.Token, body).Execute(endpoint.Method, target)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("%w (Status: %d): %s", ErrUnauthorized,
+			res.StatusCode(), truncateBody(body))
 	}
 
 	return finish(res, result)
 }
 
-// cachedAuth returns the cached token when it is present and still valid.
-func (t *tino) cachedAuth() (AuthData, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+// FallbackTokenTTL is the lifetime [Tino.Login] assumes when the gateway
+// omits expires_at. Without it a zero expiry makes every single call
+// re-authenticate, which turns normal traffic into a login flood.
+const FallbackTokenTTL = 5 * time.Minute
 
-	if t.auth != nil && t.auth.Token != "" && t.auth.ExpiresAt.After(time.Now().Add(tokenRenewBefore)) {
-		return *t.auth, true
-	}
-	return AuthData{}, false
-}
-
-// invalidateAuth clears the cached token, but only if it is still the one the
-// caller used — otherwise it would discard a token another goroutine just
-// refreshed and send everyone back to the login endpoint.
-func (t *tino) invalidateAuth(token string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.auth != nil && t.auth.Token == token {
-		t.auth = nil
-	}
-}
-
-// authTino [Internal: Tino-гоос Access Token авах/шинэчлэх]
-// Энэ функц нь токен дуусах хугацааг шалгаж, шаардлагатай бол автоматаар шинэчилнэ.
-func (t *tino) authTino() (authRes AuthData, err error) {
-	// 1. Fast path: read-locked cache check.
-	if a, ok := t.cachedAuth(); ok {
-		return a, nil
-	}
-
-	// 2. Slow path: serialize the network call.
-	t.refreshMu.Lock()
-	defer t.refreshMu.Unlock()
-
-	// 3. Double-check — another goroutine may have refreshed while we waited.
-	if a, ok := t.cachedAuth(); ok {
-		return a, nil
-	}
-
-	// 4. Perform the actual refresh (outside 'mu' to keep readers responsive).
+// Login [Tino-гоос Access Token авах]
+//
+// Login performs exactly one request and caches nothing: the returned token is
+// the caller's to hold, store and install with [Tino.SetToken]. Concurrent
+// callers each issue their own request, so deduplicating them is the caller's
+// job too — the SDK has no way to know whether a token is shared across
+// processes.
+func (t *tino) Login(ctx context.Context) (Token, error) {
 	var response AuthResponse
 	res, err := t.client.R().
+		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetResponseBodyLimit(maxResponseBodySize).
 		SetBody(AuthRequest{
@@ -323,33 +284,41 @@ func (t *tino) authTino() (authRes AuthData, err error) {
 		Post(t.authUrl + TinoMerchantLogin.Url)
 
 	if err != nil {
-		return authRes, err
+		return Token{}, err
 	}
 
 	if err := finish(res, &response); err != nil {
-		return authRes, fmt.Errorf("%s-Tino auth failed: %w",
+		return Token{}, fmt.Errorf("%s-Tino auth failed: %w",
 			time.Now().Format("2006-01-02 15:04:05"), err)
 	}
 
 	// The gateway answers HTTP 200 with {"status":false} for bad credentials.
-	// Only the HTTP status used to be checked, so an empty token was cached and
-	// every later call went out with no Authorization header at all — while
-	// still reporting success to the caller.
+	// Only the HTTP status used to be checked, so an empty token was returned
+	// as a success and every later call went out with no Authorization header
+	// at all.
 	if !response.Status {
-		return authRes, fmt.Errorf("tino auth failed: %s",
+		return Token{}, fmt.Errorf("tino auth failed: %s",
 			messageOr(response.Message, "authentication rejected by gateway"))
 	}
 	if response.Data.Token == "" {
-		return authRes, errors.New("tino auth failed: response contained no token")
-	}
-	if response.Data.ExpiresAt.IsZero() {
-		response.Data.ExpiresAt = time.Now().Add(fallbackTokenTTL)
+		return Token{}, errors.New("tino auth failed: response contained no token")
 	}
 
-	// 5. Update shared state under the write lock.
+	return tokenFrom(response.Data), nil
+}
+
+// SetToken installs the token subsequent calls will carry. Passing the zero
+// Token clears it, which makes the next call fail with [ErrNoToken] rather
+// than reach Tino unauthenticated.
+func (t *tino) SetToken(token Token) {
 	t.mu.Lock()
-	t.auth = &response.Data
+	t.token = token
 	t.mu.Unlock()
+}
 
-	return response.Data, nil
+// Token returns the installed token.
+func (t *tino) Token() Token {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.token
 }
