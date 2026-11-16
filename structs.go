@@ -91,6 +91,8 @@ type (
 		PaidAt             time.Time `json:"paid_at"`
 		OrganizationRegNum string    `json:"organization_reg_num"`
 		OrganizationName   string    `json:"organization_name"`
+		// OrganizationPaidAmount is the part of the invoice an organization paid.
+		OrganizationPaidAmount float64 `json:"organization_paid_amount"`
 	}
 	InvoiceCallbackResponse struct {
 		BaseResponse
@@ -122,6 +124,19 @@ type (
 		Age         int    `json:"age"`
 		CountryName string `json:"country_name"`
 		KycStatus   string `json:"kyc_status"`
+		// TesoEmployee and Student say which kind of user this is; Tino manages both.
+		TesoEmployee bool `json:"teso_employee"`
+		Student      bool `json:"student"`
+		// DiscountTiers is the user's discount by invoice amount, set per
+		// merchant. Empty means no discount.
+		DiscountTiers []DiscountTier `json:"discount_tiers"`
+	}
+	// DiscountTier is one amount band of a user's discount. MaxAmount is nil
+	// (JSON null) for the top band, which has no upper limit.
+	DiscountTier struct {
+		MinAmount       float64  `json:"min_amount"`
+		MaxAmount       *float64 `json:"max_amount"`
+		DiscountPercent float64  `json:"discount_percent"`
 	}
 )
 

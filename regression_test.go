@@ -319,3 +319,47 @@ func TestFix_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// GetUser decodes the miniapp fields Tino added: user kind and discount tiers,
+// with max_amount null on the top tier.
+func TestGetUser_DiscountTiers(t *testing.T) {
+	s, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		jsonOK(w, map[string]any{"status": true, "data": map[string]any{
+			"id": "u1", "teso_employee": true, "student": false,
+			"discount_tiers": []map[string]any{
+				{"min_amount": 0, "max_amount": 5000, "discount_percent": 5},
+				{"min_amount": 5000, "max_amount": nil, "discount_percent": 10},
+			},
+		}})
+	})
+	u, err := newAuthed(t, s.URL, s.URL).GetUser("tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !u.TesoEmployee || u.Student || len(u.DiscountTiers) != 2 {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+	lo, hi := u.DiscountTiers[0], u.DiscountTiers[1]
+	if lo.MinAmount != 0 || lo.MaxAmount == nil || *lo.MaxAmount != 5000 || lo.DiscountPercent != 5 {
+		t.Fatalf("bad first tier: %+v", lo)
+	}
+	if hi.MinAmount != 5000 || hi.MaxAmount != nil || hi.DiscountPercent != 10 {
+		t.Fatalf("bad top tier: %+v", hi)
+	}
+}
+
+func TestCheckInvoice_OrganizationPaidAmount(t *testing.T) {
+	s, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		jsonOK(w, map[string]any{"status": true, "data": map[string]any{
+			"invoice_id": "i1", "organization_paid_amount": 7000,
+			"organization_reg_num": "123", "organization_name": "Org",
+		}})
+	})
+	r, err := newAuthed(t, s.URL, s.URL).CheckInvoice("i1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Data.OrganizationPaidAmount != 7000 {
+		t.Fatalf("organization_paid_amount = %v", r.Data.OrganizationPaidAmount)
+	}
+}
